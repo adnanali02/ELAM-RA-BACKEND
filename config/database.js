@@ -1,10 +1,10 @@
 /**
  * =====================================================
- * إعدادات قاعدة البيانات
+ * إعدادات قاعدة البيانات (المحدثة والمؤمنة)
  * Database Configuration
  * =====================================================
  * الملف: backend/config/database.js
- * الغرض: إدارة الاتصال بقاعدة البيانات PostgreSQL (Render)
+ * الغرض: إدارة الاتصال بقاعدة البيانات PostgreSQL (Render + Neon)
  * =====================================================
  */
 
@@ -14,20 +14,31 @@ const path = require('path');
 require('dotenv').config();
 
 // =====================================================
-// إعداد الاتصال
-// Connection Setup
+// إعداد الاتصال والمعالجة الذكية
+// Connection Setup & Sanitization
 // =====================================================
-// نستخدم رابط قاعدة البيانات من متغيرات البيئة في Render
-// في حال العمل محلياً، يمكنك وضع الرابط في ملف .env
-const connectionString = process.env.DATABASE_URL;
+
+let connectionString = process.env.DATABASE_URL;
+
+// 🛡️ حماية إضافية: تنظيف الرابط من علامات التنصيص إذا وجدت بالخطأ
+if (connectionString) {
+    connectionString = connectionString.replace(/^['"]|['"]$/g, '').trim();
+}
+
+if (!connectionString) {
+    console.error('❌ CRITICAL ERROR: DATABASE_URL is missing in environment variables!');
+}
 
 const poolConfig = {
     connectionString: connectionString,
-    // إعدادات SSL ضرورية للعمل على Render
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    max: 20, // الحد الأقصى للاتصالات المتزامنة
+    // 🔒 إعدادات SSL: ضرورية لـ Render و Neon
+    // rejectUnauthorized: false يضمن التشفير (Encryption) لكنه يسمح بشهادات Neon الذاتية
+    ssl: {
+        rejectUnauthorized: false 
+    },
+    max: 20, // الحد الأقصى للاتصالات
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000, // زيادة المهلة قليلاً لتجنب الفصل السريع
 };
 
 // =====================================================
@@ -36,43 +47,43 @@ const poolConfig = {
 // =====================================================
 class DatabaseManager {
     constructor() {
-        // إنشاء مسبح الاتصالات (Connection Pool)
+        // إنشاء مسبح الاتصالات
         this.pool = new Pool(poolConfig);
         
-        // التعامل مع أخطاء الاتصال غير المتوقعة
+        // التعامل مع أخطاء الاتصال المفاجئة لمنع توقف السيرفر
         this.pool.on('error', (err, client) => {
-            console.error('Unexpected error on idle client', err);
-            process.exit(-1);
+            console.error('⚠️ Unexpected error on idle client:', err);
+            // لا نغلق العملية (process.exit) للحفاظ على استمرار السيرفر
         });
     }
 
     /**
-     * اختبار الاتصال
-     * Test Connection
+     * اختبار الاتصال (Health Check)
      */
     async testConnection() {
         try {
             const client = await this.pool.connect();
-            console.log('Successfully connected to PostgreSQL database');
+            // استعلام بسيط للتأكد من أن قاعدة البيانات ترد فعلياً
+            await client.query('SELECT NOW()'); 
+            console.log('✅ Successfully connected to PostgreSQL database (Secure SSL)');
             client.release();
             return true;
         } catch (err) {
-            console.error('Database connection error:', err.message);
+            console.error('❌ Database connection error:', err.message);
             return false;
         }
     }
 
     /**
-     * تنفيذ استعلام عام (متوافق مع pg)
-     * Execute generic query
+     * تنفيذ استعلام عام
      */
     async query(text, params) {
         return this.pool.query(text, params);
     }
 
     /**
-     * جلب صف واحد (للتوافق مع الكود القديم)
-     * Get single row
+     * جلب صف واحد
+     * (مطابق للكود القديم)
      */
     async get(sql, params = []) {
         try {
@@ -85,8 +96,8 @@ class DatabaseManager {
     }
 
     /**
-     * جلب جميع الصفوف (للتوافق مع الكود القديم)
-     * Get all rows
+     * جلب جميع الصفوف
+     * (مطابق للكود القديم)
      */
     async all(sql, params = []) {
         try {
@@ -100,16 +111,14 @@ class DatabaseManager {
 
     /**
      * تنفيذ أمر (إدخال/تعديل/حذف)
-     * Execute command (Insert/Update/Delete)
-     * ملاحظة: في PostgreSQL لا يوجد this.lastID تلقائياً
-     * يجب استخدام "RETURNING id" في جملة SQL للحصول على المعرف
+     * (مطابق للكود القديم مع تحسين دعم PostgreSQL)
      */
     async run(sql, params = []) {
         try {
             const res = await this.pool.query(sql, params);
-            // محاولة محاكاة استجابة SQLite للحفاظ على توافق الكود
             return {
-                id: res.rows[0]?.id || null, // يعمل فقط إذا استخدمت RETURNING id
+                // ملاحظة: لكي يعمل id يجب أن تحتوي جملة SQL على "RETURNING id"
+                id: res.rows[0]?.id || null, 
                 changes: res.rowCount
             };
         } catch (err) {
@@ -119,35 +128,38 @@ class DatabaseManager {
     }
 
     /**
-     * تهيئة الجداول (تستخدم عند بدء التشغيل)
-     * Initialize Tables
+     * تهيئة الجداول
      */
     async initialize() {
         try {
-            // قراءة ملف المخطط (Schema)
-            // تنبيه: تأكد أن ملف schema.sql يستخدم صيغة PostgreSQL وليست SQLite
             const schemaPath = path.join(__dirname, '../../database/schema.sql');
             
             if (fs.existsSync(schemaPath)) {
+                console.log('📂 Loading schema from:', schemaPath);
                 const schema = fs.readFileSync(schemaPath, 'utf8');
+                
+                // تنفيذ السكيما
                 await this.pool.query(schema);
-                console.log('Database schema initialized successfully');
+                console.log('✅ Database schema initialized successfully');
+                
+                // إجراء فحص اتصال نهائي
+                return await this.testConnection();
+            } else {
+                console.warn('⚠️ Schema file not found at:', schemaPath);
+                return true; 
             }
-            
-            return true;
         } catch (error) {
-            console.error('Database initialization error:', error);
-            // لا نوقف البرنامج، فقد تكون الجداول موجودة مسبقاً
+            console.error('❌ Database initialization error:', error);
             return false;
         }
     }
 
     /**
-     * إغلاق الاتصال نهائياً
-     * End Pool
+     * إغلاق الاتصال
      */
     async end() {
         await this.pool.end();
+        console.log('Database pool closed.');
     }
 }
 

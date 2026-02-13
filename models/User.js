@@ -9,7 +9,7 @@
  */
 
 const db = require('../config/database');
-const { Security } = require('../config/security');
+const { Security } = require('../middleware/security');
 
 // =====================================================
 // فئة المستخدم

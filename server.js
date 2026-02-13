@@ -53,7 +53,7 @@ app.use(cors({
     origin: [
         'http://localhost:5500', // للتجربة المحلية
         'http://127.0.0.1:5500', // للتجربة المحلية
-        'https://YOUR-GITHUB-USERNAME.github.io' // ⚠️ استبدل هذا برابط موقعك على GitHub
+        'https:https://adnanali02.github.io/ELAM-RA-jewelry.github.io' // ⚠️ استبدل هذا برابط موقعك على GitHub
     ],
     credentials: true, // للسماح بمرور ملفات تعريف الارتباط (Cookies)
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

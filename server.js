@@ -89,12 +89,23 @@ app.use(session({
 // المسارات (Routes)
 // =====================================================
 
-// فحص حالة الخادم
-app.get('/api/health', (req, res) => {
-    res.status(200).json({ 
-        status: 'active', 
-        dbState: db.pool.totalCount > 0 ? 'connected' : 'disconnected' 
-    });
+// فحص حالة الخادم وقاعدة البيانات الحقيقية
+app.get('/api/health', async (req, res) => {
+    try {
+        // محاولة تنفيذ استعلام بسيط للتأكد من الاتصال
+        await db.query('SELECT 1');
+        res.status(200).json({ 
+            status: 'active', 
+            dbState: 'connected' // ✅ سيظهر هذا إذا نجح الاستعلام
+        });
+    } catch (error) {
+        console.error('Health check failed:', error);
+        res.status(500).json({ 
+            status: 'active', 
+            dbState: 'disconnected',
+            error: error.message 
+        });
+    }
 });
 
 // ربط مسارات الـ API

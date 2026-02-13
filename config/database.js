@@ -1,25 +1,24 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// تنظيف الرابط من أي علامات تنصيص قد تكون بقيت
+// إصلاح الرابط تلقائياً (إزالة علامات التنصيص إن وجدت)
 const connectionString = process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/['"]/g, "") : "";
-
-console.log("Attempting to connect to DB..."); // سنرى هذه الرسالة في السجلات
 
 const pool = new Pool({
     connectionString: connectionString,
     ssl: {
-        rejectUnauthorized: false // هذا السطر هو مفتاح الحل مع Neon
+        rejectUnauthorized: false // ⚠️ هذا السطر ضروري جداً لـ Neon
     },
     connectionTimeoutMillis: 5000 // مهلة 5 ثواني
 });
 
+// رسائل تظهر في السجلات لنعرف حالة الاتصال
 pool.on('connect', () => {
-    console.log('✅ Connected to Database successfully!');
+    console.log('✅ Database Connected Successfully!');
 });
 
 pool.on('error', (err) => {
-    console.error('❌ Database Error:', err);
+    console.error('❌ Database Connection Error:', err);
 });
 
 module.exports = {
@@ -27,10 +26,10 @@ module.exports = {
     query: (text, params) => pool.query(text, params),
     initialize: async () => {
         try {
-            await pool.query('SELECT NOW()');
+            await pool.query('SELECT NOW()'); // تجربة استعلام بسيط
             return true;
         } catch (e) {
-            console.error(e);
+            console.error('Initialization Error:', e);
             return false;
         }
     }
